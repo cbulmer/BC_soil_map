@@ -46,4 +46,3 @@ if (file.exists(".\\ED_maps\\MATL\\MATRF_all_con.asc")){
 }
 
 rm(r,q,qc,qm,p,pc,pm)
-setwd(dir_script)

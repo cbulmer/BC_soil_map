@@ -415,7 +415,6 @@ rm(r,q,q1)
 #add grid files for climate, bec
 #*********************
 
-setwd(dir_script)
 gc()
 
 
