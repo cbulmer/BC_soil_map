@@ -5,10 +5,14 @@
 #... predicts values for a map area with available ascii grids. 
 #... writes the predicted output to an ascii grid file. 
 
+#Clean up the destination folder, and prepare to run randomForest
+do.call(file.remove,list(list.files(paste(dir_name,"\\ED_models\\MATL",sep=""),full.names=TRUE)))
+do.call(file.remove,list(list.files(paste(dir_name,"\\ED_maps\\MATL",sep=""),full.names=TRUE)))
+
 print(paste("Running randomForest prediction: ED_",ed_list[i], sep=""))
 
-# Load rF Training data ----
 
+# Load rF Training data -------------------------------------------------------
 if (file.exists(paste(dir_name,"\\ED_training_data\\MATL\\Training_CanSIS_matl.csv",sep=""))){
 MAT_raw_CanSIS <- read.csv(paste(dir_name,"\\ED_training_data\\MATL\\Training_CanSIS_matl.csv",sep=""),header=TRUE)
 table(MAT_raw_CanSIS$MATERIAL)
@@ -22,7 +26,7 @@ table(MAT_raw_CanSIS$MATERIAL)
 
 if (file.exists(paste(dir_name,"\\ED_training_data\\MATL\\Training_Seamless_matl.csv",sep=""))){
   MAT_raw_Seamless <- read.csv(paste(dir_name,"\\ED_training_data\\MATL\\Training_Seamless_matl.csv",sep=""),header=TRUE)
-table(MAT_raw_Seamless$MATERIAL)
+  table(MAT_raw_Seamless$MATERIAL)
 } else {
   print("Could not find a csv file with training data for Seamless")
   sink(paste(dir_name,"\\ED_models\\MATL\\_Seamless_no training data found.txt",sep=""), append=FALSE, split=FALSE)
@@ -33,18 +37,18 @@ table(MAT_raw_Seamless$MATERIAL)
 
 if (file.exists(paste(dir_name,"\\ED_training_data\\MATL\\Training_SoBC_matl.csv",sep=""))){
   MAT_raw_SoBC <- read.csv(paste(dir_name,"\\ED_training_data\\MATL\\Training_SoBC_matl.csv",sep=""),header=TRUE)
-table(MAT_raw_SoBC$MATERIAL)
-} else {
+  table(MAT_raw_SoBC$MATERIAL)
+  } else {
   print("Could not find a csv file with training data for SoBC")
   sink(paste(dir_name,"\\ED_models\\MATL\\_SoBC_no training data found.txt",sep=""), append=FALSE, split=FALSE)
   print("Could not find a csv file with training data for SoBC")
-  sink() 
+  sink()
   return
 }
 
 if (file.exists(paste(dir_name,"\\ED_training_data\\MATL\\Training_ST_20K_matl.csv",sep=""))){
   MAT_raw_ST_20K <- read.csv(paste(dir_name,"\\ED_training_data\\MATL\\Training_ST_20K_matl.csv",sep=""),header=TRUE)
-table(MAT_raw_ST_20K$MATERIAL)
+  table(MAT_raw_ST_20K$MATERIAL)
 } else {
   print("Could not find a csv file with training data for ST_20K")
   sink(paste(dir_name,"\\ED_models\\MATL\\_ST_20K_no training data found.txt",sep=""), append=FALSE, split=FALSE)
@@ -55,7 +59,7 @@ table(MAT_raw_ST_20K$MATERIAL)
 
 if (file.exists(paste(dir_name,"\\ED_training_data\\MATL\\Training_ST_GT20K_matl.csv",sep=""))){
   MAT_raw_ST_GT20K <- read.csv(paste(dir_name,"\\ED_training_data\\MATL\\Training_ST_GT20K_matl.csv",sep=""),header=TRUE)
-table(MAT_raw_ST_GT20K$MATERIAL)
+  table(MAT_raw_ST_GT20K$MATERIAL)
 } else {
   print("Could not find a csv file with training data for ST_GT20K")
   sink(paste(dir_name,"\\ED_models\\MATL\\_ST_GT20K_no training data found.txt",sep=""), append=FALSE, split=FALSE)
@@ -64,7 +68,8 @@ table(MAT_raw_ST_GT20K$MATERIAL)
   return
 }
 
-objects()
+
+# Build a combined dataset with all training data -------------------------
 
 v<-ls(pattern = glob2rx("MAT_raw*"))
 if (length(v) < 1){next} else {return}
@@ -78,7 +83,12 @@ for(j in 1:length(v)){
 
 MAT_raw_all <- subset(MAT_raw_all, select = c("ID","MATERIAL","MAT_CODE","C_A_1HA","C_N_B_L","C_SLOPE","CURV","CURV_PL","CURV_PR","CURV_US","ELEV","HD_2_CH","HT_NORM","HT_STD","HTNRM_K","HTSTD_K","MB_IND","MDSLP_K","MID_SLP","MRRTFHA","MRRTFKM","MRVBFHA","MRVBFKM","OPENNEG","OPENPOS","RHSP_HA","RHSP_KM","SL_HT_K","SLOPE","SLOPEHT","SLOPEUS","V_D_C_N","VALLY_D","VY_DP_K","WETSAGA"))
 
-# 1 - create balanced dataset and run RF 
+rm(v,j)
+
+
+# Run RF for all training datasets combined -------------------------------
+
+# 1 - create balanced dataset and run RF for all data
 MAT_02_COLL <- subset(MAT_raw_all, MATERIAL == "02_COLL")
 MAT_03_RKWE <- subset(MAT_raw_all, MATERIAL == "03_RKWE")
 MAT_04_EOLI <- subset(MAT_raw_all, MATERIAL == "04_EOLI")  
@@ -121,6 +131,18 @@ summary(MAT_bal$MATERIAL)
 
 MAT_bal <- MAT_bal[!is.na(MAT_bal$MATERIAL),]
 
+#If any material type has less than 1000 cases delete it
+y<-table(MAT_bal$MATERIAL)
+z<-names(y)
+for(k in 1:length(z)){
+  if(y[k]<1000){
+    MAT_bal<-MAT_bal[MAT_bal$MATERIAL!=z[k],]
+    print(paste("Deleted all cases of parent material  ",z[k],sep=""))
+  }
+  else{print("OK")}
+}
+rm(k,y,z)
+
 MAT_bal$MATERIAL <- factor(MAT_bal$MATERIAL)
 
 MAT_bal$MAT_CODE <- factor(MAT_bal$MAT_CODE)
@@ -129,66 +151,77 @@ table(MAT_bal$MATERIAL)
 
 names(MAT_bal)
 
-#If dataset has less than three material types delete it and skip
+#Check to see if the dataset has at least three material types, if not skip it
 m<-levels(MAT_bal$MATERIAL)
-if(length(m) < 3){next} else {return}
-
-head(MAT_bal)
-
-tail(MAT_bal)
-
-MAT_bal.roughfix<-na.roughfix(MAT_bal)
-
-set.seed(101)
-
-MATRF_all_bal<- randomForest(MAT_CODE ~ C_A_1HA+C_N_B_L+C_SLOPE+CURV+CURV_PL+CURV_PR+CURV_US+ELEV+HD_2_CH+HT_NORM+HT_STD+HTNRM_K+HTSTD_K+MB_IND+MDSLP_K+MID_SLP+MRRTFHA+MRRTFKM+MRVBFHA+MRVBFKM+OPENNEG+OPENPOS+RHSP_HA+RHSP_KM+SL_HT_K+SLOPE+SLOPEHT+SLOPEUS+V_D_C_N+VALLY_D+VY_DP_K+WETSAGA,data=MAT_bal.roughfix, importance=TRUE, proximity=TRUE, TYPE=classification)
-
-write.csv(MAT_bal.roughfix, file=paste(dir_name,"\\ED_models\\MATL\\MAT_all_bal_roughfix.csv", sep=""))
-
-MATRF_all_bal_cv <- rfcv(MAT_bal.roughfix, MAT_bal.roughfix$MAT_CODE, cv.fold=5, scale="log", step=0.8)
-
-sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_bal_cv.txt", sep=""), append=FALSE, split=FALSE)
-print(MATRF_all_bal_cv)
-sink()
-
-sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_bal_MDA.txt", sep=""), append=FALSE, split=FALSE)
-importance(MATRF_all_bal,type=1)
-sink()
-
-sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_bal_MDG.txt", sep=""), append=FALSE, split=FALSE)
-importance(MATRF_all_bal,type=2)
-sink()
-
-save(MATRF_all_bal, file = paste(dir_name,"\\ED_models\\MATL\\MATRF_all_bal.Rdata", sep=""))
-
-pdf(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_bal_Importance.pdf", sep=""),width = 7, height = 10, pointsize = 12,)
-varImpPlot(MATRF_all_bal)
-dev.off()
-
-margins.rf = margin(MATRF_all_bal,MAT_bal.roughfix$MATERIAL)
-pdf(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_bal_Margins.pdf", sep=""),width = 10, height = 7, pointsize = 12,)
-boxplot(margins.rf~MAT_bal.roughfix$MATERIAL,main="RF Margins for MAT_all_bal by class")
-dev.off()
-
-sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_bal_.txt", sep=""), append=FALSE, split=FALSE)
-print(MATRF_all_bal)
-sink()
-
-print("finished all_bal")
-
-rm(MAT_bal,MAT_bal.roughfix,margins.rf)
+if(length(m) > 2){
+  
+  head(MAT_bal)
+  
+  tail(MAT_bal)
+  
+  MAT_bal.roughfix<-na.roughfix(MAT_bal)
+  
+  set.seed(101)
+  
+  MATRF_all_bal<- randomForest(MAT_CODE ~ C_A_1HA+C_N_B_L+C_SLOPE+CURV+CURV_PL+CURV_PR+CURV_US+ELEV+HD_2_CH+HT_NORM+HT_STD+HTNRM_K+HTSTD_K+MB_IND+MDSLP_K+MID_SLP+MRRTFHA+MRRTFKM+MRVBFHA+MRVBFKM+OPENNEG+OPENPOS+RHSP_HA+RHSP_KM+SL_HT_K+SLOPE+SLOPEHT+SLOPEUS+V_D_C_N+VALLY_D+VY_DP_K+WETSAGA,data=MAT_bal.roughfix, importance=TRUE, proximity=TRUE, TYPE=classification)
+  
+  write.csv(MAT_bal.roughfix, file=paste(dir_name,"\\ED_models\\MATL\\MAT_all_bal_roughfix.csv", sep=""))
+  
+  MATRF_all_bal_cv <- rfcv(MAT_bal.roughfix, MAT_bal.roughfix$MAT_CODE, cv.fold=5, scale="log", step=0.8)
+  
+  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_bal_cv.txt", sep=""), append=FALSE, split=FALSE)
+  print(MATRF_all_bal_cv)
+  sink()
+  
+  a <- importance(MATRF_all_bal,type=1)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_all_bal_MDA.csv", sep=""))
+  rm(a)
+  
+  a <- importance(MATRF_all_bal,type=2)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_all_bal_MDG.csv", sep=""))
+  rm(a)
+  
+  save(MATRF_all_bal, file = paste(dir_name,"\\ED_models\\MATL\\MATRF_all_bal.Rdata", sep=""))
+  
+  pdf(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_bal_Importance.pdf", sep=""),width = 7, height = 10, pointsize = 12,)
+  varImpPlot(MATRF_all_bal)
+  dev.off()
+  
+  margins.rf = margin(MATRF_all_bal,MAT_bal.roughfix$MATERIAL)
+  pdf(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_bal_Margins.pdf", sep=""),width = 10, height = 7, pointsize = 12,)
+  boxplot(margins.rf~MAT_bal.roughfix$MATERIAL,main="RF Margins for MAT_all_bal by class")
+  dev.off()
+  
+  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_bal_.txt", sep=""), append=FALSE, split=FALSE)
+  print(MATRF_all_bal)
+  sink()
+  
+  rm(MAT_bal,MAT_bal.roughfix,margins.rf,MATRF_all_bal_cv)
+  
+  print("finished all_bal")
+    
+} else {return}
+rm(m)
 
 # 2 - create constrained dataset and run RF 
 MAT_02_COLL <- subset(MAT_raw_all, MATERIAL == "02_COLL" & SLOPEUS > 25)
 MAT_03_RKWE <- subset(MAT_raw_all, MATERIAL == "03_RKWE")
 MAT_04_EOLI <- subset(MAT_raw_all, MATERIAL == "04_EOLI")  
 MAT_05_FLUV <- subset(MAT_raw_all, (MATERIAL == "05_FLUV" & SLOPEUS < 10 & MRVBFHA > 0.5 & V_D_C_N < (.0005*VY_DP_K)) | (MATERIAL == "06_GLFL"  & SLOPEUS < 10 & MRVBFHA > 0.5 & V_D_C_N < (.0005*VY_DP_K)))
+MAT_05_FLUV <- within(MAT_05_FLUV, levels(MATERIAL)[levels(MATERIAL) == "06_GLFL"] <- "05_FLUV")
+MAT_05_FLUV$MAT_CODE[MAT_05_FLUV$MAT_CODE == 6] <- 5
 MAT_06_GLFL <- subset(MAT_raw_all, (MATERIAL == "05_FLUV" & V_D_C_N > (.0005*VY_DP_K)) | (MATERIAL == "06_GLFL" & V_D_C_N > (.0005*VY_DP_K)))
+MAT_06_GLFL <- within(MAT_06_GLFL, levels(MATERIAL)[levels(MATERIAL) == "05_FLUV"] <- "06_GLFL")
+MAT_06_GLFL$MAT_CODE[MAT_06_GLFL$MAT_CODE == 5] <- 6
 MAT_07__ICE <- subset(MAT_raw_all, MATERIAL == "07__ICE")
 MAT_08_LACU <- subset(MAT_raw_all, (MATERIAL == "08_LACU" & V_D_C_N < (.0005*VY_DP_K)) | (MATERIAL == "09_GLLC" & V_D_C_N < (.0005*VY_DP_K)))
+MAT_08_LACU <- within(MAT_08_LACU, levels(MATERIAL)[levels(MATERIAL) == "09_GLLC"] <- "08_LACU")
+MAT_08_LACU$MAT_CODE[MAT_08_LACU$MAT_CODE == 9] <- 8
 MAT_09_GLLC <- subset(MAT_raw_all, (MATERIAL == "08_LACU" & V_D_C_N > (.0005*VY_DP_K)) | (MATERIAL == "09_GLLC" & V_D_C_N > (.0005*VY_DP_K)))
+MAT_09_GLLC <- within(MAT_09_GLLC, levels(MATERIAL)[levels(MATERIAL) == "08_LACU"] <- "09_GLLC")
+MAT_09_GLLC$MAT_CODE[MAT_09_GLLC$MAT_CODE == 8] <- 9
 MAT_10_TILL <- subset(MAT_raw_all, MATERIAL == "10_TILL" & SLOPEUS < 35)
-MAT_11_UNDO <- subset(MAT_raw_all, MATERIAL == "11_UNDO")
+MAT_11_UNDO <- subset(MAT_raw_all, MATERIAL == "11_UNDO" & MRVBFHA > 1.5)
 MAT_12_RKUD <- subset(MAT_raw_all, MATERIAL == "12_RKUD")
 MAT_13_UDIF <- subset(MAT_raw_all, MATERIAL == "13_UDIF")
 MAT_14_VOLC <- subset(MAT_raw_all, MATERIAL == "14_VOLC")
@@ -219,6 +252,18 @@ rm(MAT_02_COLLs,MAT_03_RKWEs,MAT_04_EOLIs,MAT_05_FLUVs,MAT_06_GLFLs,MAT_07__ICEs
 
 summary(MAT_con$MATERIAL)
 
+#If any material type has less than 1000 cases delete it
+y<-table(MAT_con$MATERIAL)
+z<-names(y)
+for(k in 1:length(z)){
+  if(y[k]<1000){
+    MAT_con<-MAT_con[MAT_con$MATERIAL!=z[k],]
+    print(paste("Deleted all cases of parent material  ",z[k],sep=""))
+  }
+  else{print("OK")}
+}
+rm(k,y,z)
+
 MAT_con <- MAT_con[!is.na(MAT_con$MATERIAL),]
 
 MAT_con$MATERIAL <- factor(MAT_con$MATERIAL)
@@ -229,63 +274,64 @@ table(MAT_con$MATERIAL)
 
 names(MAT_con)
 
-#If dataset has less than three material types delete it and skip
+#Check to see if the dataset has at least three material types, if not skip it
 m<-levels(MAT_con$MATERIAL)
-if(length(m) < 3){next} else {return}
-
-head(MAT_con)
-
-tail(MAT_con)
-
-MAT_con.roughfix<-na.roughfix(MAT_con)
-
-set.seed(101)
-
-MATRF_all_con<- randomForest(MAT_CODE ~ C_A_1HA+C_N_B_L+C_SLOPE+CURV+CURV_PL+CURV_PR+CURV_US+ELEV+HD_2_CH+HT_NORM+HT_STD+HTNRM_K+HTSTD_K+MB_IND+MDSLP_K+MID_SLP+MRRTFHA+MRRTFKM+MRVBFHA+MRVBFKM+OPENNEG+OPENPOS+RHSP_HA+RHSP_KM+SL_HT_K+SLOPE+SLOPEHT+SLOPEUS+V_D_C_N+VALLY_D+VY_DP_K+WETSAGA,data=MAT_con.roughfix, importance=TRUE, proximity=TRUE, TYPE=classification)
-
-write.csv(MAT_con.roughfix, file=paste(dir_name,"\\ED_models\\MATL\\MAT_all_con_roughfix.csv", sep=""))
-
-MATRF_all_con_cv <- rfcv(MAT_con.roughfix, MAT_con.roughfix$MAT_CODE, cv.fold=5, scale="log", step=0.8)
-
-sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_con_cv.txt", sep=""), append=FALSE, split=FALSE)
-print(MATRF_all_con_cv)
-sink()
-
-sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_con_MDA.txt", sep=""), append=FALSE, split=FALSE)
-importance(MATRF_all_con,type=1)
-sink()
-
-sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_con_MDG.txt", sep=""), append=FALSE, split=FALSE)
-importance(MATRF_all_con,type=2)
-sink()
-
-save(MATRF_all_con, file = paste(dir_name,"\\ED_models\\MATL\\MATRF_all_con.Rdata", sep=""))
-
-pdf(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_con_Importance.pdf", sep=""),width = 7, height = 10, pointsize = 12,)
-varImpPlot(MATRF_all_con)
-dev.off()
-
-margins.rf = margin(MATRF_all_con,MAT_con.roughfix$MATERIAL)
-pdf(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_con_Margins.pdf", sep=""),width = 10, height = 7, pointsize = 12,)
-boxplot(margins.rf~MAT_con.roughfix$MATERIAL,main="RF Margins for MAT_all_con by class")
-dev.off()
-
-sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_con_.txt", sep=""), append=FALSE, split=FALSE)
-print(MATRF_all_con)
-sink()
-
-print("finished all_con")
-
-rm(MAT_con,MAT_con.roughfix,margins.rf)
-
-rm(MATRF_all_bal_cv,MATRF_all_con_cv)
+if(length(m) > 2){
+  
+  head(MAT_con)
+  
+  tail(MAT_con)
+  
+  MAT_con.roughfix<-na.roughfix(MAT_con)
+  
+  set.seed(101)
+  
+  MATRF_all_con<- randomForest(MAT_CODE ~ C_A_1HA+C_N_B_L+C_SLOPE+CURV+CURV_PL+CURV_PR+CURV_US+ELEV+HD_2_CH+HT_NORM+HT_STD+HTNRM_K+HTSTD_K+MB_IND+MDSLP_K+MID_SLP+MRRTFHA+MRRTFKM+MRVBFHA+MRVBFKM+OPENNEG+OPENPOS+RHSP_HA+RHSP_KM+SL_HT_K+SLOPE+SLOPEHT+SLOPEUS+V_D_C_N+VALLY_D+VY_DP_K+WETSAGA,data=MAT_con.roughfix, importance=TRUE, proximity=TRUE, TYPE=classification)
+  
+  write.csv(MAT_con.roughfix, file=paste(dir_name,"\\ED_models\\MATL\\MAT_all_con_roughfix.csv", sep=""))
+  
+  MATRF_all_con_cv <- rfcv(MAT_con.roughfix, MAT_con.roughfix$MAT_CODE, cv.fold=5, scale="log", step=0.8)
+  
+  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_con_cv.txt", sep=""), append=FALSE, split=FALSE)
+  print(MATRF_all_con_cv)
+  sink()
+  
+  a <- importance(MATRF_all_con,type=1)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_all_con_MDA.csv", sep=""))
+  rm(a)
+  
+  a <- importance(MATRF_all_con,type=2)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_all_con_MDG.csv", sep=""))
+  rm(a)
+  
+  save(MATRF_all_con, file = paste(dir_name,"\\ED_models\\MATL\\MATRF_all_con.Rdata", sep=""))
+  
+  pdf(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_con_Importance.pdf", sep=""),width = 7, height = 10, pointsize = 12,)
+  varImpPlot(MATRF_all_con)
+  dev.off()
+  
+  margins.rf = margin(MATRF_all_con,MAT_con.roughfix$MATERIAL)
+  pdf(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_con_Margins.pdf", sep=""),width = 10, height = 7, pointsize = 12,)
+  boxplot(margins.rf~MAT_con.roughfix$MATERIAL,main="RF Margins for MAT_all_con by class")
+  dev.off()
+  
+  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_con_.txt", sep=""), append=FALSE, split=FALSE)
+  print(MATRF_all_con)
+  sink()
+  
+  rm(MAT_con,MAT_con.roughfix,margins.rf,MATRF_all_con_cv)
+  
+  print("finished all_con")
+  
+} else {return}
+rm(m)
 #*********************
 
 
-# rF on CanSIS training data (balanced by "MATERIAL")
-# does the training data csv exist? (ie. check if there is training data for the area...)
-if (file.exists(".\\ED_training_data\\MATL\\Training_CanSIS_matl.csv")){
-  
+# Run RF on individual training datasets ----------------------------------
+
+# does the CanSIS training data csv exist? (ie. check if there is training data for the area...)
+if (file.exists(paste(dir_name,"\\ED_training_data\\MATL\\Training_CanSIS_matl.csv",sep=""))){  
   # 1 - create balanced dataset and run RF 
   MAT_02_COLL <- subset(MAT_raw_CanSIS, MATERIAL == "02_COLL")
   MAT_03_RKWE <- subset(MAT_raw_CanSIS, MATERIAL == "03_RKWE")
@@ -327,6 +373,18 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_CanSIS_matl.csv")){
   
   summary(MAT_bal$MATERIAL)
   
+  #If any material type has less than 1000 cases delete it
+  y<-table(MAT_bal$MATERIAL)
+  z<-names(y)
+  for(k in 1:length(z)){
+    if(y[k]<1000){
+      MAT_bal<-MAT_bal[MAT_bal$MATERIAL!=z[k],]
+      print(paste("Deleted all cases of parent material  ",z[k],sep=""))
+    }
+    else{print("OK")}
+  }
+  rm(k,y,z)
+  
   MAT_bal <- MAT_bal[!is.na(MAT_bal$MATERIAL),]
   
   MAT_bal$MATERIAL <- factor(MAT_bal$MATERIAL)
@@ -337,9 +395,9 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_CanSIS_matl.csv")){
   
   names(MAT_bal)
   
-  #If dataset has less than three material types delete it and skip
+  #Check to see if the dataset has at least three material types, if not skip it
   m<-levels(MAT_bal$MATERIAL)
-  if(length(m) < 3){next} else {return}
+  if(length(m) > 2){
   
   head(MAT_bal)
   
@@ -359,13 +417,13 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_CanSIS_matl.csv")){
   print(MATRF_CanSIS_bal_cv)
   sink()
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_CanSIS_bal_MDA.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_CanSIS_bal,type=1)
-  sink()
+  a <- importance(MATRF_CanSIS_bal,type=1)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_CanSIS_bal_MDA.csv", sep=""))
+  rm(a)
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_CanSIS_bal_MDG.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_CanSIS_bal,type=2)
-  sink()
+  a <- importance(MATRF_CanSIS_bal,type=2)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_CanSIS_bal_MDG.csv", sep=""))
+  rm(a)
   
   save(MATRF_CanSIS_bal, file = paste(dir_name,"\\ED_models\\MATL\\MATRF_CanSIS_bal.Rdata", sep=""))
   
@@ -382,21 +440,32 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_CanSIS_matl.csv")){
   print(MATRF_CanSIS_bal)
   sink()
   
-  print("finished CanSIS_bal")
+  rm(MAT_bal,MAT_bal.roughfix,margins.rf,MATRF_CanSIS_bal_cv)
   
-  rm(MAT_bal,MAT_bal.roughfix,margins.rf)
+  print("finished CanSIS_bal")
+    
+  } else {return}
+  rm(m)
   
   # 2 - create constrained dataset and run RF 
   MAT_02_COLL <- subset(MAT_raw_CanSIS, MATERIAL == "02_COLL" & SLOPEUS > 25)
   MAT_03_RKWE <- subset(MAT_raw_CanSIS, MATERIAL == "03_RKWE")
   MAT_04_EOLI <- subset(MAT_raw_CanSIS, MATERIAL == "04_EOLI")  
   MAT_05_FLUV <- subset(MAT_raw_CanSIS, (MATERIAL == "05_FLUV" & SLOPEUS < 10 & MRVBFHA > 0.5 & V_D_C_N < (.0005*VY_DP_K)) | (MATERIAL == "06_GLFL"  & SLOPEUS < 10 & MRVBFHA > 0.5 & V_D_C_N < (.0005*VY_DP_K)))
+  MAT_05_FLUV <- within(MAT_05_FLUV, levels(MATERIAL)[levels(MATERIAL) == "06_GLFL"] <- "05_FLUV")
+  MAT_05_FLUV$MAT_CODE[MAT_05_FLUV$MAT_CODE == 6] <- 5
   MAT_06_GLFL <- subset(MAT_raw_CanSIS, (MATERIAL == "05_FLUV" & V_D_C_N > (.0005*VY_DP_K)) | (MATERIAL == "06_GLFL" & V_D_C_N > (.0005*VY_DP_K)))
+  MAT_06_GLFL <- within(MAT_06_GLFL, levels(MATERIAL)[levels(MATERIAL) == "05_FLUV"] <- "06_GLFL")
+  MAT_06_GLFL$MAT_CODE[MAT_06_GLFL$MAT_CODE == 5] <- 6
   MAT_07__ICE <- subset(MAT_raw_CanSIS, MATERIAL == "07__ICE")
   MAT_08_LACU <- subset(MAT_raw_CanSIS, (MATERIAL == "08_LACU" & V_D_C_N < (.0005*VY_DP_K)) | (MATERIAL == "09_GLLC" & V_D_C_N < (.0005*VY_DP_K)))
+  MAT_08_LACU <- within(MAT_08_LACU, levels(MATERIAL)[levels(MATERIAL) == "09_GLLC"] <- "08_LACU")
+  MAT_08_LACU$MAT_CODE[MAT_08_LACU$MAT_CODE == 9] <- 8
   MAT_09_GLLC <- subset(MAT_raw_CanSIS, (MATERIAL == "08_LACU" & V_D_C_N > (.0005*VY_DP_K)) | (MATERIAL == "09_GLLC" & V_D_C_N > (.0005*VY_DP_K)))
+  MAT_09_GLLC <- within(MAT_09_GLLC, levels(MATERIAL)[levels(MATERIAL) == "08_LACU"] <- "09_GLLC")
+  MAT_09_GLLC$MAT_CODE[MAT_09_GLLC$MAT_CODE == 8] <- 9
   MAT_10_TILL <- subset(MAT_raw_CanSIS, MATERIAL == "10_TILL" & SLOPEUS < 35)
-  MAT_11_UNDO <- subset(MAT_raw_CanSIS, MATERIAL == "11_UNDO")
+  MAT_11_UNDO <- subset(MAT_raw_CanSIS, MATERIAL == "11_UNDO" & MRVBFHA > 1.5)
   MAT_12_RKUD <- subset(MAT_raw_CanSIS, MATERIAL == "12_RKUD")
   MAT_13_UDIF <- subset(MAT_raw_CanSIS, MATERIAL == "13_UDIF")
   MAT_14_VOLC <- subset(MAT_raw_CanSIS, MATERIAL == "14_VOLC")
@@ -427,6 +496,18 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_CanSIS_matl.csv")){
   
   summary(MAT_con$MATERIAL)
   
+  #If any material type has less than 1000 cases delete it
+  y<-table(MAT_con$MATERIAL)
+  z<-names(y)
+  for(k in 1:length(z)){
+    if(y[k]<1000){
+      MAT_con<-MAT_con[MAT_con$MATERIAL!=z[k],]
+      print(paste("Deleted all cases of parent material  ",z[k],sep=""))
+    }
+    else{print("OK")}
+  }
+  rm(k,y,z)
+  
   MAT_con <- MAT_con[!is.na(MAT_con$MATERIAL),]
   
   MAT_con$MATERIAL <- factor(MAT_con$MATERIAL)
@@ -437,9 +518,9 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_CanSIS_matl.csv")){
   
   names(MAT_con)
   
-  #If dataset has less than three material types delete it and skip
+  #Check to see if the dataset has at least three material types, if not skip it
   m<-levels(MAT_con$MATERIAL)
-  if(length(m) < 3){next} else {return}
+  if(length(m) > 2){
   
   head(MAT_con)
   
@@ -459,13 +540,13 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_CanSIS_matl.csv")){
   print(MATRF_CanSIS_con_cv)
   sink()
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_CanSIS_con_MDA.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_CanSIS_con,type=1)
-  sink()
+  a <- importance(MATRF_CanSIS_con,type=1)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_CanSIS_con_MDA.csv", sep=""))
+  rm(a)
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_CanSIS_con_MDG.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_CanSIS_con,type=2)
-  sink()
+  a <- importance(MATRF_CanSIS_con,type=2)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_CanSIS_con_MDG.csv", sep=""))
+  rm(a)
   
   save(MATRF_CanSIS_con, file = paste(dir_name,"\\ED_models\\MATL\\MATRF_CanSIS_con.Rdata", sep=""))
   
@@ -482,17 +563,22 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_CanSIS_matl.csv")){
   print(MATRF_CanSIS_con)
   sink()
   
+  rm(MAT_con,MAT_con.roughfix,margins.rf,MATRF_CanSIS_con_cv)
+  
   print("finished CanSIS_con")
+    
+  } else {return}
   
-  rm(MAT_con,MAT_con.roughfix,margins.rf)
+  rm(m)
   
-  rm(MATRF_CanSIS_bal_cv,MATRF_CanSIS_con_cv)
-  #*********************
+}  else  {
+  return
+}
+#*********************
   
 
-# rF on Seamless training data (1- balanced by "MATERIAL" and 2- constrained by 1st principles)
-# does the training data csv exist? (ie. check if there is training data for the area...)
-if (file.exists(".\\ED_training_data\\MATL\\Training_Seamless_matl.csv")){
+# does the Seamless training data csv exist? (ie. check if there is training data for the area...)
+if (file.exists(paste(dir_name,"\\ED_training_data\\MATL\\Training_Seamless_matl.csv",sep=""))){
   
   # 1 - create balanced dataset and run RF 
   MAT_02_COLL <- subset(MAT_raw_Seamless, MATERIAL == "02_COLL")
@@ -535,6 +621,18 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_Seamless_matl.csv")){
   
   summary(MAT_bal$MATERIAL)
   
+  #If any material type has less than 1000 cases delete it
+  y<-table(MAT_bal$MATERIAL)
+  z<-names(y)
+  for(k in 1:length(z)){
+    if(y[k]<1000){
+      MAT_bal<-MAT_bal[MAT_bal$MATERIAL!=z[k],]
+      print(paste("Deleted all cases of parent material  ",z[k],sep=""))
+    }
+    else{print("OK")}
+  }
+  rm(k,y,z)
+  
   MAT_bal <- MAT_bal[!is.na(MAT_bal$MATERIAL),]
   
   MAT_bal$MATERIAL <- factor(MAT_bal$MATERIAL)
@@ -545,10 +643,10 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_Seamless_matl.csv")){
   
   names(MAT_bal)
   
-  #If dataset has less than three material types delete it and skip
+  #Check to see if the dataset has at least three material types, if not skip it
   m<-levels(MAT_bal$MATERIAL)
-  if(length(m) < 3){next} else {return}
-  
+  if(length(m) > 2){
+    
   head(MAT_bal)
   
   tail(MAT_bal)
@@ -567,13 +665,13 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_Seamless_matl.csv")){
   print(MATRF_Seamless_bal_cv)
   sink()
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_Seamless_bal_MDA.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_Seamless_bal,type=1)
-  sink()
+  a <- importance(MATRF_Seamless_bal,type=1)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_Seamless_bal_MDA.csv", sep=""))
+  rm(a)
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_Seamless_bal_MDG.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_Seamless_bal,type=2)
-  sink()
+  a <- importance(MATRF_Seamless_bal,type=2)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_Seamless_bal_MDG.csv", sep=""))
+  rm(a)
   
   save(MATRF_Seamless_bal, file = paste(dir_name,"\\ED_models\\MATL\\MATRF_Seamless_bal.Rdata", sep=""))
   
@@ -590,21 +688,32 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_Seamless_matl.csv")){
   print(MATRF_Seamless_bal)
   sink()
   
-  print("finished Seamless_bal")
+  rm(MAT_bal,MAT_bal.roughfix,margins.rf,MATRF_Seamless_bal_cv)
   
-  rm(MAT_bal,MAT_bal.roughfix,margins.rf)
+  print("finished Seamless_bal")
+    
+  } else {return}
+  rm(m)
   
   # 2 - create constrained dataset and run RF 
   MAT_02_COLL <- subset(MAT_raw_Seamless, MATERIAL == "02_COLL" & SLOPEUS > 25)
   MAT_03_RKWE <- subset(MAT_raw_Seamless, MATERIAL == "03_RKWE")
   MAT_04_EOLI <- subset(MAT_raw_Seamless, MATERIAL == "04_EOLI")  
   MAT_05_FLUV <- subset(MAT_raw_Seamless, (MATERIAL == "05_FLUV" & SLOPEUS < 10 & MRVBFHA > 0.5 & V_D_C_N < (.0005*VY_DP_K)) | (MATERIAL == "06_GLFL"  & SLOPEUS < 10 & MRVBFHA > 0.5 & V_D_C_N < (.0005*VY_DP_K)))
+  MAT_05_FLUV <- within(MAT_05_FLUV, levels(MATERIAL)[levels(MATERIAL) == "06_GLFL"] <- "05_FLUV")
+  MAT_05_FLUV$MAT_CODE[MAT_05_FLUV$MAT_CODE == 6] <- 5
   MAT_06_GLFL <- subset(MAT_raw_Seamless, (MATERIAL == "05_FLUV" & V_D_C_N > (.0005*VY_DP_K)) | (MATERIAL == "06_GLFL" & V_D_C_N > (.0005*VY_DP_K)))
+  MAT_06_GLFL <- within(MAT_06_GLFL, levels(MATERIAL)[levels(MATERIAL) == "05_FLUV"] <- "06_GLFL")
+  MAT_06_GLFL$MAT_CODE[MAT_06_GLFL$MAT_CODE == 5] <- 6
   MAT_07__ICE <- subset(MAT_raw_Seamless, MATERIAL == "07__ICE")
   MAT_08_LACU <- subset(MAT_raw_Seamless, (MATERIAL == "08_LACU" & V_D_C_N < (.0005*VY_DP_K)) | (MATERIAL == "09_GLLC" & V_D_C_N < (.0005*VY_DP_K)))
+  MAT_08_LACU <- within(MAT_08_LACU, levels(MATERIAL)[levels(MATERIAL) == "09_GLLC"] <- "08_LACU")
+  MAT_08_LACU$MAT_CODE[MAT_08_LACU$MAT_CODE == 9] <- 8
   MAT_09_GLLC <- subset(MAT_raw_Seamless, (MATERIAL == "08_LACU" & V_D_C_N > (.0005*VY_DP_K)) | (MATERIAL == "09_GLLC" & V_D_C_N > (.0005*VY_DP_K)))
+  MAT_09_GLLC <- within(MAT_09_GLLC, levels(MATERIAL)[levels(MATERIAL) == "08_LACU"] <- "09_GLLC")
+  MAT_09_GLLC$MAT_CODE[MAT_09_GLLC$MAT_CODE == 8] <- 9
   MAT_10_TILL <- subset(MAT_raw_Seamless, MATERIAL == "10_TILL" & SLOPEUS < 35)
-  MAT_11_UNDO <- subset(MAT_raw_Seamless, MATERIAL == "11_UNDO")
+  MAT_11_UNDO <- subset(MAT_raw_Seamless, MATERIAL == "11_UNDO" & MRVBFHA > 1.5)
   MAT_12_RKUD <- subset(MAT_raw_Seamless, MATERIAL == "12_RKUD")
   MAT_13_UDIF <- subset(MAT_raw_Seamless, MATERIAL == "13_UDIF")
   MAT_14_VOLC <- subset(MAT_raw_Seamless, MATERIAL == "14_VOLC")
@@ -635,6 +744,18 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_Seamless_matl.csv")){
   
   summary(MAT_con$MATERIAL)
   
+  #If any material type has less than 1000 cases delete it
+  y<-table(MAT_con$MATERIAL)
+  z<-names(y)
+  for(k in 1:length(z)){
+    if(y[k]<1000){
+      MAT_con<-MAT_con[MAT_con$MATERIAL!=z[k],]
+      print(paste("Deleted all cases of parent material  ",z[k],sep=""))
+    }
+    else{print("OK")}
+  }
+  rm(k,y,z)
+  
   MAT_con <- MAT_con[!is.na(MAT_con$MATERIAL),]
   
   MAT_con$MATERIAL <- factor(MAT_con$MATERIAL)
@@ -645,10 +766,10 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_Seamless_matl.csv")){
   
   names(MAT_con)
   
-  #If dataset has less than three material types delete it and skip
+  #Check to see if the dataset has at least three material types, if not skip it
   m<-levels(MAT_con$MATERIAL)
-  if(length(m) < 3){next} else {return}
-  
+  if(length(m) > 2){
+    
   head(MAT_con)
   
   tail(MAT_con)
@@ -667,13 +788,13 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_Seamless_matl.csv")){
   print(MATRF_Seamless_con_cv)
   sink()
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_Seamless_con_MDA.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_Seamless_con,type=1)
-  sink()
+  a <- importance(MATRF_Seamless_con,type=1)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_Seamless_con_MDA.csv", sep=""))
+  rm(a)
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_Seamless_con_MDG.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_Seamless_con,type=2)
-  sink()
+  a <- importance(MATRF_Seamless_con,type=2)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_Seamless_con_MDG.csv", sep=""))
+  rm(a)
   
   save(MATRF_Seamless_con, file = paste(dir_name,"\\ED_models\\MATL\\MATRF_Seamless_con.Rdata", sep=""))
   
@@ -690,17 +811,21 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_Seamless_matl.csv")){
   print(MATRF_Seamless_con)
   sink()
   
+  rm(MAT_con,MAT_con.roughfix,margins.rf,MATRF_Seamless_con_cv)
+  
   print("finished Seamless_con")
+    
+  } else {return}
+  rm(m)
   
-  rm(MAT_con,MAT_con.roughfix,margins.rf)
-  
-  rm(MATRF_Seamless_bal_cv,MATRF_Seamless_con_cv)
-  #*********************
+}  else  {
+  return
+}
+#*********************
 
 
-# rF on SoBC training data ((1- balanced by "MATERIAL" and 2- constrained by 1st principles))
-# does the training data csv exist? (ie. check if there is training data for the area...)
-if (file.exists(".\\ED_training_data\\MATL\\Training_SoBC_matl.csv")){
+# does the SoBC training data csv exist? (ie. check if there is training data for the area...)
+if (file.exists(paste(dir_name,"\\ED_training_data\\MATL\\Training_SoBC_matl.csv",sep=""))){
 
   # 1 - create balanced dataset and run RF 
   MAT_02_COLL <- subset(MAT_raw_SoBC, MATERIAL == "02_COLL")
@@ -743,6 +868,17 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_SoBC_matl.csv")){
   
   summary(MAT_bal$MATERIAL)
   
+  #If any material type has less than 1000 cases delete it
+  y<-table(MAT_bal$MATERIAL)
+  z<-names(y)
+  for(k in 1:length(z)){
+    if(y[k]<1000){
+      MAT_bal<-MAT_bal[MAT_bal$MATERIAL!=z[k],]
+      print(paste("Deleted all cases of parent material  ",z[k],sep=""))
+    }
+    else{print("OK")}
+  }
+  
   MAT_bal <- MAT_bal[!is.na(MAT_bal$MATERIAL),]
   
   MAT_bal$MATERIAL <- factor(MAT_bal$MATERIAL)
@@ -753,9 +889,9 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_SoBC_matl.csv")){
   
   names(MAT_bal)
   
-  #If dataset has less than three material types delete it and skip
+  #Check to see if the dataset has at least three material types, if not skip it
   m<-levels(MAT_bal$MATERIAL)
-  if(length(m) < 3){next} else {return}
+  if(length(m) > 2){
   
   head(MAT_bal)
   
@@ -775,13 +911,13 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_SoBC_matl.csv")){
   print(MATRF_SoBC_bal_cv)
   sink()
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_SoBC_bal_MDA.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_SoBC_bal,type=1)
-  sink()
+  a <- importance(MATRF_SoBC_bal,type=1)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_SoBC_bal_MDA.csv", sep=""))
+  rm(a)
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_SoBC_bal_MDG.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_SoBC_bal,type=2)
-  sink()
+  a <- importance(MATRF_SoBC_bal,type=2)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_SoBC_bal_MDG.csv", sep=""))
+  rm(a)
   
   save(MATRF_SoBC_bal, file = paste(dir_name,"\\ED_models\\MATL\\MATRF_SoBC_bal.Rdata", sep=""))
   
@@ -798,21 +934,32 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_SoBC_matl.csv")){
   print(MATRF_SoBC_bal)
   sink()
   
+  rm(MAT_bal,MAT_bal.roughfix,margins.rf,MATRF_SoBC_bal_cv)
+  
   print("finished SoBC_bal")
   
-  rm(MAT_bal,MAT_bal.roughfix,margins.rf)
+  } else {return}
+  rm(m)
   
   # 2 - create constrained dataset and run RF 
   MAT_02_COLL <- subset(MAT_raw_SoBC, MATERIAL == "02_COLL" & SLOPEUS > 25)
   MAT_03_RKWE <- subset(MAT_raw_SoBC, MATERIAL == "03_RKWE")
   MAT_04_EOLI <- subset(MAT_raw_SoBC, MATERIAL == "04_EOLI")  
   MAT_05_FLUV <- subset(MAT_raw_SoBC, (MATERIAL == "05_FLUV" & SLOPEUS < 10 & MRVBFHA > 0.5 & V_D_C_N < (.0005*VY_DP_K)) | (MATERIAL == "06_GLFL"  & SLOPEUS < 10 & MRVBFHA > 0.5 & V_D_C_N < (.0005*VY_DP_K)))
+  MAT_05_FLUV <- within(MAT_05_FLUV, levels(MATERIAL)[levels(MATERIAL) == "06_GLFL"] <- "05_FLUV")
+  MAT_05_FLUV$MAT_CODE[MAT_05_FLUV$MAT_CODE == 6] <- 5
   MAT_06_GLFL <- subset(MAT_raw_SoBC, (MATERIAL == "05_FLUV" & V_D_C_N > (.0005*VY_DP_K)) | (MATERIAL == "06_GLFL" & V_D_C_N > (.0005*VY_DP_K)))
+  MAT_06_GLFL <- within(MAT_06_GLFL, levels(MATERIAL)[levels(MATERIAL) == "05_FLUV"] <- "06_GLFL")
+  MAT_06_GLFL$MAT_CODE[MAT_06_GLFL$MAT_CODE == 5] <- 6
   MAT_07__ICE <- subset(MAT_raw_SoBC, MATERIAL == "07__ICE")
   MAT_08_LACU <- subset(MAT_raw_SoBC, (MATERIAL == "08_LACU" & V_D_C_N < (.0005*VY_DP_K)) | (MATERIAL == "09_GLLC" & V_D_C_N < (.0005*VY_DP_K)))
+  MAT_08_LACU <- within(MAT_08_LACU, levels(MATERIAL)[levels(MATERIAL) == "09_GLLC"] <- "08_LACU")
+  MAT_08_LACU$MAT_CODE[MAT_08_LACU$MAT_CODE == 9] <- 8
   MAT_09_GLLC <- subset(MAT_raw_SoBC, (MATERIAL == "08_LACU" & V_D_C_N > (.0005*VY_DP_K)) | (MATERIAL == "09_GLLC" & V_D_C_N > (.0005*VY_DP_K)))
+  MAT_09_GLLC <- within(MAT_09_GLLC, levels(MATERIAL)[levels(MATERIAL) == "08_LACU"] <- "09_GLLC")
+  MAT_09_GLLC$MAT_CODE[MAT_09_GLLC$MAT_CODE == 8] <- 9
   MAT_10_TILL <- subset(MAT_raw_SoBC, MATERIAL == "10_TILL" & SLOPEUS < 35)
-  MAT_11_UNDO <- subset(MAT_raw_SoBC, MATERIAL == "11_UNDO")
+  MAT_11_UNDO <- subset(MAT_raw_SoBC, MATERIAL == "11_UNDO" & MRVBFHA > 1.5)
   MAT_12_RKUD <- subset(MAT_raw_SoBC, MATERIAL == "12_RKUD")
   MAT_13_UDIF <- subset(MAT_raw_SoBC, MATERIAL == "13_UDIF")
   MAT_14_VOLC <- subset(MAT_raw_SoBC, MATERIAL == "14_VOLC")
@@ -843,6 +990,18 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_SoBC_matl.csv")){
   
   summary(MAT_con$MATERIAL)
   
+  #If any material type has less than 1000 cases delete it
+  y<-table(MAT_con$MATERIAL)
+  z<-names(y)
+  for(k in 1:length(z)){
+    if(y[k]<1000){
+      MAT_con<-MAT_con[MAT_con$MATERIAL!=z[k],]
+      print(paste("Deleted all cases of parent material  ",z[k],sep=""))
+    }
+    else{print("OK")}
+  }
+  rm(k,y,z)
+  
   MAT_con <- MAT_con[!is.na(MAT_con$MATERIAL),]
   
   MAT_con$MATERIAL <- factor(MAT_con$MATERIAL)
@@ -853,10 +1012,10 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_SoBC_matl.csv")){
   
   names(MAT_con)
   
-  #If dataset has less than three material types delete it and skip
+  #Check to see if the dataset has at least three material types, if not skip it
   m<-levels(MAT_con$MATERIAL)
-  if(length(m) < 3){next} else {return}
-  
+  if(length(m) > 2){
+    
   head(MAT_con)
   
   tail(MAT_con)
@@ -875,13 +1034,13 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_SoBC_matl.csv")){
   print(MATRF_SoBC_con_cv)
   sink()
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_SoBC_con_MDA.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_SoBC_con,type=1)
-  sink()
+  a <- importance(MATRF_SoBC_con,type=1)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_SoBC_con_MDA.csv", sep=""))
+  rm(a)
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_SoBC_con_MDG.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_SoBC_con,type=2)
-  sink()
+  a <- importance(MATRF_SoBC_con,type=2)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_SoBC_con_MDG.csv", sep=""))
+  rm(a)
   
   save(MATRF_SoBC_con, file = paste(dir_name,"\\ED_models\\MATL\\MATRF_SoBC_con.Rdata", sep=""))
   
@@ -898,17 +1057,21 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_SoBC_matl.csv")){
   print(MATRF_SoBC_con)
   sink()
   
+  rm(MAT_con,MAT_con.roughfix,margins.rf,MATRF_SoBC_con_cv)
+  
   print("finished SoBC_con")
   
-  rm(MAT_con,MAT_con.roughfix,margins.rf)
-  
-  rm(MATRF_SoBC_bal_cv,MATRF_SoBC_con_cv)
-  #*********************
+  } else {return}
+  rm(m)
+    
+}  else  {
+  return
+}
+#*********************
 
 
-#rF on ST_20K training data ((1- balanced by "MATERIAL" and 2- constrained by 1st principles))
-# does the training data csv exist? (ie. check if there is training data for the area...)
-if (file.exists(".\\ED_training_data\\MATL\\Training_ST_20K_matl.csv")){
+# does the ST_20K training data csv exist? (ie. check if there is training data for the area...)
+if (file.exists(paste(dir_name,"\\ED_training_data\\MATL\\Training_ST_20K_matl.csv",sep=""))){
   
   # 1 - create balanced dataset and run RF 
   MAT_02_COLL <- subset(MAT_raw_ST_20K, MATERIAL == "02_COLL")
@@ -951,6 +1114,18 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_ST_20K_matl.csv")){
   
   summary(MAT_bal$MATERIAL)
   
+  #If any material type has less than 1000 cases delete it
+  y<-table(MAT_bal$MATERIAL)
+  z<-names(y)
+  for(k in 1:length(z)){
+    if(y[k]<1000){
+      MAT_bal<-MAT_bal[MAT_bal$MATERIAL!=z[k],]
+      print(paste("Deleted all cases of parent material  ",z[k],sep=""))
+    }
+    else{print("OK")}
+  }
+  rm(k,y,z)
+  
   MAT_bal <- MAT_bal[!is.na(MAT_bal$MATERIAL),]
   
   MAT_bal$MATERIAL <- factor(MAT_bal$MATERIAL)
@@ -961,10 +1136,10 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_ST_20K_matl.csv")){
   
   names(MAT_bal)
   
-  #If dataset has less than three material types delete it and skip
+  #Check to see if the dataset has at least three material types, if not skip it
   m<-levels(MAT_bal$MATERIAL)
-  if(length(m) < 3){next} else {return}
-  
+  if(length(m) > 2){
+    
   head(MAT_bal)
   
   tail(MAT_bal)
@@ -983,13 +1158,13 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_ST_20K_matl.csv")){
   print(MATRF_ST_20K_bal_cv)
   sink()
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_20K_bal_MDA.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_ST_20K_bal,type=1)
-  sink()
+  a <- importance(MATRF_ST_20K_bal,type=1)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_20K_bal_MDA.csv", sep=""))
+  rm(a)
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_20K_bal_MDG.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_ST_20K_bal,type=2)
-  sink()
+  a <- importance(MATRF_ST_20K_bal,type=2)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_20K_bal_MDG.csv", sep=""))
+  rm(a)
   
   save(MATRF_ST_20K_bal, file = paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_20K_bal.Rdata", sep=""))
   
@@ -1006,21 +1181,32 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_ST_20K_matl.csv")){
   print(MATRF_ST_20K_bal)
   sink()
   
-  print("finished ST_20K_bal")
+  rm(MAT_bal,MAT_bal.roughfix,margins.rf,MATRF_ST_20K_bal_cv)
   
-  rm(MAT_bal,MAT_bal.roughfix,margins.rf)
+  print("finished ST_20K_bal")
+    
+  } else {return}
+  rm(m)
   
   # 2 - create constrained dataset and run RF 
   MAT_02_COLL <- subset(MAT_raw_ST_20K, MATERIAL == "02_COLL" & SLOPEUS > 25)
   MAT_03_RKWE <- subset(MAT_raw_ST_20K, MATERIAL == "03_RKWE")
   MAT_04_EOLI <- subset(MAT_raw_ST_20K, MATERIAL == "04_EOLI")  
   MAT_05_FLUV <- subset(MAT_raw_ST_20K, (MATERIAL == "05_FLUV" & SLOPEUS < 10 & MRVBFHA > 0.5 & V_D_C_N < (.0005*VY_DP_K)) | (MATERIAL == "06_GLFL"  & SLOPEUS < 10 & MRVBFHA > 0.5 & V_D_C_N < (.0005*VY_DP_K)))
+  MAT_05_FLUV <- within(MAT_05_FLUV, levels(MATERIAL)[levels(MATERIAL) == "06_GLFL"] <- "05_FLUV")
+  MAT_05_FLUV$MAT_CODE[MAT_05_FLUV$MAT_CODE == 6] <- 5
   MAT_06_GLFL <- subset(MAT_raw_ST_20K, (MATERIAL == "05_FLUV" & V_D_C_N > (.0005*VY_DP_K)) | (MATERIAL == "06_GLFL" & V_D_C_N > (.0005*VY_DP_K)))
+  MAT_06_GLFL <- within(MAT_06_GLFL, levels(MATERIAL)[levels(MATERIAL) == "05_FLUV"] <- "06_GLFL")
+  MAT_06_GLFL$MAT_CODE[MAT_06_GLFL$MAT_CODE == 5] <- 6
   MAT_07__ICE <- subset(MAT_raw_ST_20K, MATERIAL == "07__ICE")
   MAT_08_LACU <- subset(MAT_raw_ST_20K, (MATERIAL == "08_LACU" & V_D_C_N < (.0005*VY_DP_K)) | (MATERIAL == "09_GLLC" & V_D_C_N < (.0005*VY_DP_K)))
+  MAT_08_LACU <- within(MAT_08_LACU, levels(MATERIAL)[levels(MATERIAL) == "09_GLLC"] <- "08_LACU")
+  MAT_08_LACU$MAT_CODE[MAT_08_LACU$MAT_CODE == 9] <- 8
   MAT_09_GLLC <- subset(MAT_raw_ST_20K, (MATERIAL == "08_LACU" & V_D_C_N > (.0005*VY_DP_K)) | (MATERIAL == "09_GLLC" & V_D_C_N > (.0005*VY_DP_K)))
+  MAT_09_GLLC <- within(MAT_09_GLLC, levels(MATERIAL)[levels(MATERIAL) == "08_LACU"] <- "09_GLLC")
+  MAT_09_GLLC$MAT_CODE[MAT_09_GLLC$MAT_CODE == 8] <- 9
   MAT_10_TILL <- subset(MAT_raw_ST_20K, MATERIAL == "10_TILL" & SLOPEUS < 35)
-  MAT_11_UNDO <- subset(MAT_raw_ST_20K, MATERIAL == "11_UNDO")
+  MAT_11_UNDO <- subset(MAT_raw_ST_20K, MATERIAL == "11_UNDO" & MRVBFHA > 1.5)
   MAT_12_RKUD <- subset(MAT_raw_ST_20K, MATERIAL == "12_RKUD")
   MAT_13_UDIF <- subset(MAT_raw_ST_20K, MATERIAL == "13_UDIF")
   MAT_14_VOLC <- subset(MAT_raw_ST_20K, MATERIAL == "14_VOLC")
@@ -1051,6 +1237,18 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_ST_20K_matl.csv")){
   
   summary(MAT_con$MATERIAL)
   
+  #If any material type has less than 1000 cases delete it
+  y<-table(MAT_con$MATERIAL)
+  z<-names(y)
+  for(k in 1:length(z)){
+    if(y[k]<1000){
+      MAT_con<-MAT_con[MAT_con$MATERIAL!=z[k],]
+      print(paste("Deleted all cases of parent material  ",z[k],sep=""))
+    }
+    else{print("OK")}
+  }
+  rm(k,y,z)
+  
   MAT_con <- MAT_con[!is.na(MAT_con$MATERIAL),]
   
   MAT_con$MATERIAL <- factor(MAT_con$MATERIAL)
@@ -1061,10 +1259,10 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_ST_20K_matl.csv")){
   
   names(MAT_con)
   
-  #If dataset has less than three material types delete it and skip
+  #Check to see if the dataset has at least three material types, if not skip it
   m<-levels(MAT_con$MATERIAL)
-  if(length(m) < 3){next} else {return}
-  
+  if(length(m) > 2){
+    
   head(MAT_con)
   
   tail(MAT_con)
@@ -1083,13 +1281,13 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_ST_20K_matl.csv")){
   print(MATRF_ST_20K_con_cv)
   sink()
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_20K_con_MDA.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_ST_20K_con,type=1)
-  sink()
+  a <- importance(MATRF_ST_20K_con,type=1)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_20K_con_MDA.csv", sep=""))
+  rm(a)
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_20K_con_MDG.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_ST_20K_con,type=2)
-  sink()
+  a <- importance(MATRF_ST_20K_con,type=2)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_20K_con_MDG.csv", sep=""))
+  rm(a)
   
   save(MATRF_ST_20K_con, file = paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_20K_con.Rdata", sep=""))
   
@@ -1106,17 +1304,21 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_ST_20K_matl.csv")){
   print(MATRF_ST_20K_con)
   sink()
   
+  rm(MAT_con,MAT_con.roughfix,margins.rf,MATRF_ST_20K_con_cv)
+  
   print("finished ST_20K_con")
+ 
+  } else {return}
+  rm(m)
   
-  rm(MAT_con,MAT_con.roughfix,margins.rf)
-  
-  rm(MATRF_ST_20K_bal_cv,MATRF_ST_20K_con_cv)
-  #*********************
+}  else  {
+  return
+}
+#*********************
 
 
-#rF on ST_GT20K training data ((1- balanced by "MATERIAL" and 2- constrained by 1st principles))
-# does the training data csv exist? (ie. check if there is training data for the area...)
-if (file.exists(".\\ED_training_data\\MATL\\Training_ST_GT20K_matl.csv")){
+# does the ST_GT20K training data csv exist? (ie. check if there is training data for the area...)
+if (file.exists(paste(dir_name,"\\ED_training_data\\MATL\\Training_ST_GT20K_matl.csv",sep=""))){
   
   # 1 - create balanced dataset and run RF 
   MAT_02_COLL <- subset(MAT_raw_ST_GT20K, MATERIAL == "02_COLL")
@@ -1159,6 +1361,18 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_ST_GT20K_matl.csv")){
   
   summary(MAT_bal$MATERIAL)
   
+  #If any material type has less than 1000 cases delete it
+  y<-table(MAT_bal$MATERIAL)
+  z<-names(y)
+  for(k in 1:length(z)){
+    if(y[k]<1000){
+      MAT_bal<-MAT_bal[MAT_bal$MATERIAL!=z[k],]
+      print(paste("Deleted all cases of parent material  ",z[k],sep=""))
+    }
+    else{print("OK")}
+  }
+  rm(k,y,z)
+     
   MAT_bal <- MAT_bal[!is.na(MAT_bal$MATERIAL),]
   
   MAT_bal$MATERIAL <- factor(MAT_bal$MATERIAL)
@@ -1169,10 +1383,10 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_ST_GT20K_matl.csv")){
   
   names(MAT_bal)
   
-  #If dataset has less than three material types delete it and skip
+  #Check to see if the dataset has at least three material types, if not skip it
   m<-levels(MAT_bal$MATERIAL)
-  if(length(m) < 3){next} else {return}
-  
+  if(length(m) > 2){
+    
   head(MAT_bal)
   
   tail(MAT_bal)
@@ -1191,13 +1405,13 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_ST_GT20K_matl.csv")){
   print(MATRF_ST_GT20K_bal_cv)
   sink()
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_GT20K_bal_MDA.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_ST_GT20K_bal,type=1)
-  sink()
+  a <- importance(MATRF_ST_GT20K_bal,type=1)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_GT20K_bal_MDA.csv", sep=""))
+  rm(a)
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_GT20K_bal_MDG.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_ST_GT20K_bal,type=2)
-  sink()
+  a <- importance(MATRF_ST_GT20K_bal,type=2)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_GT20K_bal_MDG.csv", sep=""))
+  rm(a)
   
   save(MATRF_ST_GT20K_bal, file = paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_GT20K_bal.Rdata", sep=""))
   
@@ -1214,21 +1428,32 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_ST_GT20K_matl.csv")){
   print(MATRF_ST_GT20K_bal)
   sink()
   
+  rm(MAT_bal,MAT_bal.roughfix,margins.rf,MATRF_ST_GT20K_bal_cv)
+  
   print("finished ST_GT20K_bal")
   
-  rm(MAT_bal,MAT_bal.roughfix,margins.rf)
+  } else {return}
+  rm(m)
   
   # 2 - create constrained dataset and run RF 
   MAT_02_COLL <- subset(MAT_raw_ST_GT20K, MATERIAL == "02_COLL" & SLOPEUS > 25)
   MAT_03_RKWE <- subset(MAT_raw_ST_GT20K, MATERIAL == "03_RKWE")
   MAT_04_EOLI <- subset(MAT_raw_ST_GT20K, MATERIAL == "04_EOLI")  
   MAT_05_FLUV <- subset(MAT_raw_ST_GT20K, (MATERIAL == "05_FLUV" & SLOPEUS < 10 & MRVBFHA > 0.5 & V_D_C_N < (.0005*VY_DP_K)) | (MATERIAL == "06_GLFL"  & SLOPEUS < 10 & MRVBFHA > 0.5 & V_D_C_N < (.0005*VY_DP_K)))
+  MAT_05_FLUV <- within(MAT_05_FLUV, levels(MATERIAL)[levels(MATERIAL) == "06_GLFL"] <- "05_FLUV")
+  MAT_05_FLUV$MAT_CODE[MAT_05_FLUV$MAT_CODE == 6] <- 5
   MAT_06_GLFL <- subset(MAT_raw_ST_GT20K, (MATERIAL == "05_FLUV" & V_D_C_N > (.0005*VY_DP_K)) | (MATERIAL == "06_GLFL" & V_D_C_N > (.0005*VY_DP_K)))
+  MAT_06_GLFL <- within(MAT_06_GLFL, levels(MATERIAL)[levels(MATERIAL) == "05_FLUV"] <- "06_GLFL")
+  MAT_06_GLFL$MAT_CODE[MAT_06_GLFL$MAT_CODE == 5] <- 6
   MAT_07__ICE <- subset(MAT_raw_ST_GT20K, MATERIAL == "07__ICE")
   MAT_08_LACU <- subset(MAT_raw_ST_GT20K, (MATERIAL == "08_LACU" & V_D_C_N < (.0005*VY_DP_K)) | (MATERIAL == "09_GLLC" & V_D_C_N < (.0005*VY_DP_K)))
+  MAT_08_LACU <- within(MAT_08_LACU, levels(MATERIAL)[levels(MATERIAL) == "09_GLLC"] <- "08_LACU")
+  MAT_08_LACU$MAT_CODE[MAT_08_LACU$MAT_CODE == 9] <- 8
   MAT_09_GLLC <- subset(MAT_raw_ST_GT20K, (MATERIAL == "08_LACU" & V_D_C_N > (.0005*VY_DP_K)) | (MATERIAL == "09_GLLC" & V_D_C_N > (.0005*VY_DP_K)))
+  MAT_09_GLLC <- within(MAT_09_GLLC, levels(MATERIAL)[levels(MATERIAL) == "08_LACU"] <- "09_GLLC")
+  MAT_09_GLLC$MAT_CODE[MAT_09_GLLC$MAT_CODE == 8] <- 9
   MAT_10_TILL <- subset(MAT_raw_ST_GT20K, MATERIAL == "10_TILL" & SLOPEUS < 35)
-  MAT_11_UNDO <- subset(MAT_raw_ST_GT20K, MATERIAL == "11_UNDO")
+  MAT_11_UNDO <- subset(MAT_raw_ST_GT20K, MATERIAL == "11_UNDO" & MRVBFHA > 1.5)
   MAT_12_RKUD <- subset(MAT_raw_ST_GT20K, MATERIAL == "12_RKUD")
   MAT_13_UDIF <- subset(MAT_raw_ST_GT20K, MATERIAL == "13_UDIF")
   MAT_14_VOLC <- subset(MAT_raw_ST_GT20K, MATERIAL == "14_VOLC")
@@ -1259,6 +1484,18 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_ST_GT20K_matl.csv")){
   
   summary(MAT_con$MATERIAL)
   
+  #If any material type has less than 1000 cases delete it
+  y<-table(MAT_con$MATERIAL)
+  z<-names(y)
+  for(k in 1:length(z)){
+    if(y[k]<1000){
+      MAT_con<-MAT_con[MAT_con$MATERIAL!=z[k],]
+      print(paste("Deleted all cases of parent material  ",z[k],sep=""))
+    }
+    else{print("OK")}
+  }
+  rm(k,y,z)
+  
   MAT_con <- MAT_con[!is.na(MAT_con$MATERIAL),]
   
   MAT_con$MATERIAL <- factor(MAT_con$MATERIAL)
@@ -1269,10 +1506,10 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_ST_GT20K_matl.csv")){
   
   names(MAT_con)
   
-  #If dataset has less than three material types delete it and skip
+  #Check to see if the dataset has at least three material types, if not skip it
   m<-levels(MAT_con$MATERIAL)
-  if(length(m) < 3){next} else {return}
-  
+  if(length(m) > 2){
+    
   head(MAT_con)
   
   tail(MAT_con)
@@ -1291,13 +1528,13 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_ST_GT20K_matl.csv")){
   print(MATRF_ST_GT20K_con_cv)
   sink()
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_GT20K_con_MDA.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_ST_GT20K_con,type=1)
-  sink()
+  a <- importance(MATRF_ST_GT20K_con,type=1)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_GT20K_con_MDA.csv", sep=""))
+  rm(a)
   
-  sink(paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_GT20K_con_MDG.txt", sep=""), append=FALSE, split=FALSE)
-  importance(MATRF_ST_GT20K_con,type=2)
-  sink()
+  a <- importance(MATRF_ST_GT20K_con,type=2)
+  write.csv(a, file=paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_GT20K_con_MDG.csv", sep=""))
+  rm(a)
   
   save(MATRF_ST_GT20K_con, file = paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_GT20K_con.Rdata", sep=""))
   
@@ -1314,16 +1551,19 @@ if (file.exists(".\\ED_training_data\\MATL\\Training_ST_GT20K_matl.csv")){
   print(MATRF_ST_GT20K_con)
   sink()
   
+  rm(MAT_con,MAT_con.roughfix,margins.rf,MATRF_ST_GT20K_con_cv)
+    
   print("finished ST_GT20K_con")
+   
+  } else {return}
+  rm(m)
   
-  rm(MAT_con,MAT_con.roughfix,margins.rf)
-  
-  rm(MATRF_ST_GT20K_bal_cv,MATRF_ST_GT20K_con_cv)
-  #*********************
-  
+}  else  {
+  return
+}
+#*********************
 
 rm(MAT_raw_all,MAT_raw_CanSIS,MAT_raw_Seamless,MAT_raw_SoBC,MAT_raw_ST_20K,MAT_raw_ST_GT20K)
-
 gc()
 
 # Predict Map outputs for all models --------------------------------------
@@ -1365,114 +1605,115 @@ p <- stack(paste(dir_name,"\\ED_data\\grids\\topography_1ha\\C_A_1HA.asc",sep=""
     nlayers(p)
     #*********************
 
-  if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_bal.Rdata", sep=""))){
-    predict(p, MATRF_all_bal, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_all_bal.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
-    MATRF_all_bal.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_all_bal.asc", sep=""))
-    image(MATRF_all_bal.result, main = paste("MATRF_all_bal ED_",ed_list[i], sep=""))
-    rm(MATRF_all_bal,MATRF_all_bal.result)
-  }  else  {
-    return
-  }
-  
-  if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_con.Rdata", sep=""))){
-    predict(p, MATRF_all_con, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_all_con.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
-    MATRF_all_con.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_all_con.asc", sep=""))
-    image(MATRF_all_con.result, main = paste("MATRF_all_con ED_",ed_list[i], sep=""))
-    rm(MATRF_all_con,MATRF_all_con.result)
-  }  else  {
-    return
-  }
-    
-  if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_CanSIS_bal.Rdata", sep=""))){
-    predict(p, MATRF_CanSIS_bal, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_CanSIS_bal.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
-    MATRF_CanSIS_bal.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_CanSIS_bal.asc", sep=""))
-    image(MATRF_CanSIS_bal.result, main = paste("MATRF_CanSIS_bal ED_",ed_list[i], sep=""))
-    rm(MATRF_CanSIS_bal,MATRF_CanSIS_bal.result)
-  }  else  {
-    return
-  }
-  
-  if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_CanSIS_con.Rdata", sep=""))){
-    predict(p, MATRF_CanSIS_con, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_CanSIS_con.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
-    MATRF_CanSIS_con.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_CanSIS_con.asc", sep=""))
-    image(MATRF_CanSIS_con.result, main = paste("MATRF_CanSIS_con ED_",ed_list[i], sep=""))
-    rm(MATRF_CanSIS_con,MATRF_CanSIS_con.result)
-  }  else  {
-    return
-  }
+if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_bal.Rdata", sep=""))){
+  predict(p, MATRF_all_bal, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_all_bal.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
+  MATRF_all_bal.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_all_bal.asc", sep=""))
+  image(MATRF_all_bal.result, main = paste("MATRF_all_bal ED_",ed_list[i], sep=""))
+  rm(MATRF_all_bal,MATRF_all_bal.result)
+}  else  {
+  return
+}
 
-  if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_Seamless_bal.Rdata", sep=""))){
-    predict(p, MATRF_Seamless_bal, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_Seamless_bal.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
-    MATRF_Seamless_bal.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_Seamless_bal.asc", sep=""))
-    image(MATRF_Seamless_bal.result, main = paste("MATRF_Seamless_bal ED_",ed_list[i], sep=""))
-    rm(MATRF_Seamless_bal,MATRF_Seamless_bal.result)
-  }  else  {
-    return
-  }
-  
-  if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_Seamless_con.Rdata", sep=""))){
-    predict(p, MATRF_Seamless_con, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_Seamless_con.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
-    MATRF_Seamless_con.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_Seamless_con.asc", sep=""))
-    image(MATRF_Seamless_con.result, main = paste("MATRF_Seamless_con ED_",ed_list[i], sep=""))
-    rm(MATRF_Seamless_con,MATRF_Seamless_con.result)
-  }  else  {
-    return
-  }
+if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_all_con.Rdata", sep=""))){
+  predict(p, MATRF_all_con, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_all_con.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
+  MATRF_all_con.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_all_con.asc", sep=""))
+  image(MATRF_all_con.result, main = paste("MATRF_all_con ED_",ed_list[i], sep=""))
+  rm(MATRF_all_con,MATRF_all_con.result)
+}  else  {
+  return
+}
 
-  if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_SoBC_bal.Rdata", sep=""))){
-    predict(p, MATRF_SoBC_bal, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_SoBC_bal.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
-    MATRF_SoBC_bal.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_SoBC_bal.asc", sep=""))
-    image(MATRF_SoBC_bal.result, main = paste("MATRF_SoBC_bal ED_",ed_list[i], sep=""))
-    rm(MATRF_SoBC_bal,MATRF_SoBC_bal.result)
-  }  else  {
-    return
-  }
-  
-  if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_SoBC_con.Rdata", sep=""))){
-    predict(p, MATRF_SoBC_con, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_SoBC_con.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
-    MATRF_SoBC_con.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_SoBC_con.asc", sep=""))
-    image(MATRF_SoBC_con.result, main = paste("MATRF_SoBC_con ED_",ed_list[i], sep=""))
-    rm(MATRF_SoBC_con,MATRF_SoBC_con.result)
-  }  else  {
-    return
-  }
+if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_CanSIS_bal.Rdata", sep=""))){
+  predict(p, MATRF_CanSIS_bal, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_CanSIS_bal.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
+  MATRF_CanSIS_bal.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_CanSIS_bal.asc", sep=""))
+  image(MATRF_CanSIS_bal.result, main = paste("MATRF_CanSIS_bal ED_",ed_list[i], sep=""))
+  rm(MATRF_CanSIS_bal,MATRF_CanSIS_bal.result)
+}  else  {
+  return
+}
 
-  if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_20K_bal.Rdata", sep=""))){
-    predict(p, MATRF_ST_20K_bal, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_ST_20K_bal.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
-    MATRF_ST_20K_bal.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_ST_20K_bal.asc", sep=""))
-    image(MATRF_ST_20K_bal.result, main = paste("MATRF_ST_20K_bal ED_",ed_list[i], sep=""))
-    rm(MATRF_ST_20K_bal,MATRF_ST_20K_bal.result)
-  }  else  {
-    return
-  }
-  
-  if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_20K_con.Rdata", sep=""))){
-    predict(p, MATRF_ST_20K_con, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_ST_20K_con.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
-    MATRF_ST_20K_con.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_ST_20K_con.asc", sep=""))
-    image(MATRF_ST_20K_con.result, main = paste("MATRF_ST_20K_con ED_",ed_list[i], sep=""))
-    rm(MATRF_ST_20K_con,MATRF_ST_20K_con.result)
-  }  else  {
-    return
-  }
+if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_CanSIS_con.Rdata", sep=""))){
+  predict(p, MATRF_CanSIS_con, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_CanSIS_con.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
+  MATRF_CanSIS_con.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_CanSIS_con.asc", sep=""))
+  image(MATRF_CanSIS_con.result, main = paste("MATRF_CanSIS_con ED_",ed_list[i], sep=""))
+  rm(MATRF_CanSIS_con,MATRF_CanSIS_con.result)
+}  else  {
+  return
+}
 
-  if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_GT20K_bal.Rdata", sep=""))){
-    predict(p, MATRF_ST_GT20K_bal, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_ST_GT20K_bal.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
-    MATRF_ST_GT20K_bal.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_ST_GT20K_bal.asc", sep=""))
-    image(MATRF_ST_GT20K_bal.result, main = paste("MATRF_ST_GT20K_bal ED_",ed_list[i], sep=""))
-    rm(MATRF_ST_GT20K_bal,MATRF_ST_GT20K_bal.result)
-  }  else  {
-    return
-  }
-  
-  if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_GT20K_con.Rdata", sep=""))){
-    predict(p, MATRF_ST_GT20K_con, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_ST_GT20K_con.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
-    MATRF_ST_GT20K_con.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_ST_GT20K_con.asc", sep=""))
-    image(MATRF_ST_GT20K_con.result, main = paste("MATRF_ST_GT20K_con ED_",ed_list[i], sep=""))
-    rm(MATRF_ST_GT20K_con,MATRF_ST_GT20K_con.result)
-  }  else  {
-    return
-  }
+if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_Seamless_bal.Rdata", sep=""))){
+  predict(p, MATRF_Seamless_bal, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_Seamless_bal.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
+  MATRF_Seamless_bal.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_Seamless_bal.asc", sep=""))
+  image(MATRF_Seamless_bal.result, main = paste("MATRF_Seamless_bal ED_",ed_list[i], sep=""))
+  rm(MATRF_Seamless_bal,MATRF_Seamless_bal.result)
+}  else  {
+  return
+}
+
+if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_Seamless_con.Rdata", sep=""))){
+  predict(p, MATRF_Seamless_con, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_Seamless_con.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
+  MATRF_Seamless_con.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_Seamless_con.asc", sep=""))
+  image(MATRF_Seamless_con.result, main = paste("MATRF_Seamless_con ED_",ed_list[i], sep=""))
+  rm(MATRF_Seamless_con,MATRF_Seamless_con.result)
+}  else  {
+  return
+}
+
+if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_SoBC_bal.Rdata", sep=""))){
+  predict(p, MATRF_SoBC_bal, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_SoBC_bal.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
+  MATRF_SoBC_bal.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_SoBC_bal.asc", sep=""))
+  image(MATRF_SoBC_bal.result, main = paste("MATRF_SoBC_bal ED_",ed_list[i], sep=""))
+  rm(MATRF_SoBC_bal,MATRF_SoBC_bal.result)
+}  else  {
+  return
+}
+
+if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_SoBC_con.Rdata", sep=""))){
+  predict(p, MATRF_SoBC_con, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_SoBC_con.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
+  MATRF_SoBC_con.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_SoBC_con.asc", sep=""))
+  image(MATRF_SoBC_con.result, main = paste("MATRF_SoBC_con ED_",ed_list[i], sep=""))
+  rm(MATRF_SoBC_con,MATRF_SoBC_con.result)
+}  else  {
+  return
+}
+
+if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_20K_bal.Rdata", sep=""))){
+  predict(p, MATRF_ST_20K_bal, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_ST_20K_bal.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
+  MATRF_ST_20K_bal.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_ST_20K_bal.asc", sep=""))
+  image(MATRF_ST_20K_bal.result, main = paste("MATRF_ST_20K_bal ED_",ed_list[i], sep=""))
+  rm(MATRF_ST_20K_bal,MATRF_ST_20K_bal.result)
+}  else  {
+  return
+}
+
+if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_20K_con.Rdata", sep=""))){
+  predict(p, MATRF_ST_20K_con, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_ST_20K_con.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
+  MATRF_ST_20K_con.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_ST_20K_con.asc", sep=""))
+  image(MATRF_ST_20K_con.result, main = paste("MATRF_ST_20K_con ED_",ed_list[i], sep=""))
+  rm(MATRF_ST_20K_con,MATRF_ST_20K_con.result)
+}  else  {
+  return
+}
+
+if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_GT20K_bal.Rdata", sep=""))){
+  predict(p, MATRF_ST_GT20K_bal, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_ST_GT20K_bal.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
+  MATRF_ST_GT20K_bal.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_ST_GT20K_bal.asc", sep=""))
+  image(MATRF_ST_GT20K_bal.result, main = paste("MATRF_ST_GT20K_bal ED_",ed_list[i], sep=""))
+  rm(MATRF_ST_GT20K_bal,MATRF_ST_GT20K_bal.result)
+}  else  {
+  return
+}
+
+if (file.exists(paste(dir_name,"\\ED_models\\MATL\\MATRF_ST_GT20K_con.Rdata", sep=""))){
+  predict(p, MATRF_ST_GT20K_con, filename = paste(dir_name,"\\ED_maps\\MATL\\MATRF_ST_GT20K_con.asc", sep=""), fun = predict, se.fit=TRUE, overwrite=TRUE)
+  MATRF_ST_GT20K_con.result <- raster(paste(dir_name,"\\ED_maps\\MATL\\MATRF_ST_GT20K_con.asc", sep=""))
+  image(MATRF_ST_GT20K_con.result, main = paste("MATRF_ST_GT20K_con ED_",ed_list[i], sep=""))
+  rm(MATRF_ST_GT20K_con,MATRF_ST_GT20K_con.result)
+}  else  {
+  return
+}
 
 rm(p)
 
 gc()
+

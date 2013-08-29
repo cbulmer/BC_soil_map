@@ -15,10 +15,10 @@ library(randomForest)
 
 dir_Proj <- paste(strsplit(getwd(),"/BC_soil_map/BC_script",fixed=TRUE,perl=FALSE,useBytes=FALSE),"\\BC_soil_map",sep="") # Change project drive
 dir_script <- paste(dir_Proj,"\\BC_script",sep="") # Change script drive
-dir_data <- paste("Y:\\BC_soil_map\\BC_data",sep="") # Change data drive
+dir_data <- paste(dir_Proj,"\\BC_data",sep="") # Change data drive
 ed <- readOGR(paste(dir_data,"\\BC_shapes",sep=""),layer="EcoDistricts_BC")
 ed_all <- ed$ECODISTRIC
-ed_list <- ed_all[1] # NULL for debugging or bypassing loop
+ed_list <- ed_all[85] # NULL for debugging or bypassing loop
 run_pureUpdt <- FALSE
 run_mlayer <- FALSE
 run_td <- TRUE
