@@ -2,7 +2,7 @@
 # objects created in 'SHINYlauncher.R' or 'Rlauncher.R'
 
 # Setup the environment ----
-load("obs.RData", envir=parent.frame())
+load("obs.RData", envir=.GlobalEnv)
 #*****************************
 
 # Non-loop controller ----
